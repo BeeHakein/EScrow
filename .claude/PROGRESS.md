@@ -22,10 +22,13 @@ Suggested order:
    contract `contentHash` a REAL `Sha256DocumentHasher` (Web Crypto). Stubs kept for deterministic tests.
 3. Chain adapters (anchor/verifier/deployer/release) against deployed `Escrow.sol` / `ReportAnchor.sol` (Foundry).
 4. AI: ✅ analyzer done — `ClaudeContractAnalyzer` (real Claude, structured outputs, model `claude-sonnet-4-6`)
-   replaces `StubContractAnalyzer` behind the port. ⬜ STILL TODO: `StubDocumentParser` → real PDF/DOCX parsing
-   (library-heavy; likely Claude-assisted segmentation). ⚠️ analyzer is unit-tested with a FAKE client only —
-   not yet run against the live API (`/verify` + API key needed; anti-pattern #7). ← parser is a good NEXT slice.
-5. DB: in-memory repos → Prisma adapters.
+   replaces `StubContractAnalyzer` behind the port. ⚠️ analyzer unit-tested with a FAKE client only —
+   not yet run against the live API (`/verify` + API key needed; anti-pattern #7).
+   ✅ parser done — `ExtractingDocumentParser` (+ `TextExtractor` port + `LibraryTextExtractor` via
+   unpdf/mammoth) replaces `StubDocumentParser`. Extraction VERIFIED end-to-end on real PDF+DOCX bytes.
+   ⚠️ segmentation is still the naive blank-line heuristic (`segmentClauses`) — real docs need better
+   (Claude-assisted) segmentation; swappable behind the port. ← improving segmentation is a good NEXT slice.
+5. DB: in-memory repos → Prisma adapters. ← or take this (chain adapters still need Foundry contracts + RPC).
 
 ✅ **Funding gap closed** — `activateEscrow` marks every milestone `pending → funded` from the
 `FundingPlan` via the pure `fund` transition (pre-computed before the irreversible deploy).
@@ -37,7 +40,7 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 - Boundary parsers / value objects (`src/boundary/`) — only place brands are minted.
 - Escrow state machine: pure transitions in `domain/escrow-transitions.ts`.
 - Milestone status machine: pure transitions in `domain/milestone-transitions.ts` (`fund`/`submit`/`approve`/`release`).
-- Verify gate: `npm run typecheck` + `npm test` → currently 54 tests green.
+- Verify gate: `npm run typecheck` + `npm test` → currently 62 tests green.
 - Real adapters landed: `Sha256DocumentHasher` (Web Crypto) behind `DocumentHasher`; `Keccak256ReportHasher` (viem) behind `ReportHasher`. Shared canonical pre-image in `chain/report-canonical.ts`.
 - End-to-end acceptance test: `tests/application/full-flow.e2e.test.ts` drives ONE escrow through all 6 use-cases over shared in-memory repos (upload→…→completed), threading the real keccak report hash through anchor + signatures. This is the regression gate every real-adapter swap must keep green.
 
@@ -48,7 +51,8 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 - There is no "test at the end" phase — testing is the gate, not a stage.
 
 ## Still stubbed → real adapters pending
-- AI: ✅ `ClaudeContractAnalyzer` (real Claude, `@anthropic-ai/sdk`, structured outputs / `output_config.format`, model `claude-sonnet-4-6`) replaces `StubContractAnalyzer` behind the port; client injected so it's unit-testable offline (stub kept for deterministic tests). ⬜ `StubDocumentParser` (regex/keyword split) → real PDF/DOCX parsing still pending.
+- AI: ✅ `ClaudeContractAnalyzer` (real Claude, `@anthropic-ai/sdk`, structured outputs / `output_config.format`, model `claude-sonnet-4-6`) replaces `StubContractAnalyzer` behind the port; client injected so it's unit-testable offline (stub kept for deterministic tests).
+- Document parsing: ✅ `ExtractingDocumentParser` (real) = injected `TextExtractor` (`LibraryTextExtractor`: unpdf for PDF, mammoth for DOCX) + pure shared `segmentClauses`. Replaces `StubDocumentParser` behind the `DocumentParser` port; stub kept (now also uses `segmentClauses`) for deterministic text fixtures. Extraction verified on real PDF+DOCX; segmentation is still a naive blank-line heuristic.
 - Hash: ✅ DONE both sides. Report `ReportHasher` → REAL `Keccak256ReportHasher` (viem keccak256, EVM-native, matches the on-chain verifier); contract `contentHash` → REAL `Sha256DocumentHasher` (Web Crypto). `InsecureStubHasher`/`InsecureStubDocumentHasher` kept for deterministic tests only; the stub keccak now shares the real canonical pre-image (`chain/report-canonical.ts`).
 - Storage: `InMemoryDocumentStore` → Vercel Blob / S3 adapter (same `DocumentStore` port).
 - Chain: stub anchor/verifier/deployer/release → viem + deployed `Escrow.sol` / `ReportAnchor.sol` (Foundry). `StubEscrowDeployer` fakes deploy+fund and `StubMilestoneReleaseService` fakes payout with no real transfer — must never back a real escrow.
