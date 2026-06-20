@@ -34,8 +34,15 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 - Boundary parsers / value objects (`src/boundary/`) — only place brands are minted.
 - Escrow state machine: pure transitions in `domain/escrow-transitions.ts`.
 - Milestone status machine: pure transitions in `domain/milestone-transitions.ts` (`fund`/`submit`/`approve`/`release`).
-- Verify gate: `npm run typecheck` + `npm test` → currently 48 tests green.
+- Verify gate: `npm run typecheck` + `npm test` → currently 49 tests green.
 - Real adapters landed: `Sha256DocumentHasher` (Web Crypto) behind `DocumentHasher`; `Keccak256ReportHasher` (viem) behind `ReportHasher`. Shared canonical pre-image in `chain/report-canonical.ts`.
+- End-to-end acceptance test: `tests/application/full-flow.e2e.test.ts` drives ONE escrow through all 6 use-cases over shared in-memory repos (upload→…→completed), threading the real keccak report hash through anchor + signatures. This is the regression gate every real-adapter swap must keep green.
+
+## Testing cadence (per the QualityInfrastructure blueprint — Pattern D + Prio-1 hooks)
+- **Test-first per slice** (Adversarial TDD): write the spec/tests before the adapter; they define what the swap must satisfy. Catches the ~1.75× AI logic-error rate.
+- **Test-gate before every commit** (Prio-1 hook, exit 2): never commit on red. Already enforced.
+- **Verify the assembled app, not just units** (anti-pattern #7): the e2e flow test is the acceptance gate; for real chain/AI adapters, also exercise via `/run`/`/verify` against a testnet/live API.
+- There is no "test at the end" phase — testing is the gate, not a stage.
 
 ## Still stubbed → real adapters pending
 - AI: `StubContractAnalyzer` → real Claude analyzer; `StubDocumentParser` (regex/keyword split) → real PDF/DOCX parsing (consult `claude-api` skill, model `claude-sonnet-4-6`).
