@@ -25,9 +25,11 @@ Plan when you pick it up:
 - Test against **SQLite** (provider in a test schema) so the gate stays offline/deterministic;
   Postgres stays the prod target (`DATABASE_URL` in `.env.example`). `prisma migrate dev` for migrations.
 - Prereq: `npm i -D prisma && npm i @prisma/client`, then `npx prisma generate` (downloads engines once).
-- Gate stays BOTH halves: `npm run typecheck` + `npm test` (62 now) AND `forge test` (13).
-Context: branch `feat/real-adapters` is PUSHED and open as **PR #1** (BeeHakein/EScrow). Start the DB
-slice on a FRESH branch off `main` after the PR merges, or stack on `feat/real-adapters` if it hasn't.
+- Gate stays BOTH halves: `npm run typecheck` + `npm test` AND `forge test` (13).
+Context: branch `feat/real-adapters` is PUSHED and open as **PR #1** (BeeHakein/EScrow). Two sibling
+slices branched off it: **DB/Prisma** (`feat/prisma-adapters`) and **Claude segmentation**
+(`feat/claude-segmentation`, this branch, 68 tests). Both target #1; rebase onto `main` after #1 merges.
+On this branch the in-memory repos are still in place (the Prisma swap lives on the sibling branch).
 
 ---
 **All 6 flow steps have application use-cases; real adapters landed for hashing + AI + document
@@ -47,8 +49,11 @@ Adapter-swap history / remaining (callers never change):
    not yet run against the live API (`/verify` + API key needed; anti-pattern #7).
    ✅ parser done — `ExtractingDocumentParser` (+ `TextExtractor` port + `LibraryTextExtractor` via
    unpdf/mammoth) replaces `StubDocumentParser`. Extraction VERIFIED end-to-end on real PDF+DOCX bytes.
-   ⚠️ segmentation is still the naive blank-line heuristic (`segmentClauses`) — real docs need better
-   (Claude-assisted) segmentation; swappable behind the port. ← improving segmentation is a good NEXT slice.
+   ✅ segmentation done — new `ClauseSegmenter` port; `ClaudeClauseSegmenter` (real Claude, structured
+   outputs, model `claude-sonnet-4-6`) replaces the naive blank-line heuristic, injected into
+   `ExtractingDocumentParser`. `HeuristicClauseSegmenter` (wraps pure `segmentClauses`) kept for
+   deterministic tests. ⚠️ segmenter unit-tested with a FAKE client only — not yet run against the live
+   API (`/verify` + key; anti-pattern #7), same gap as the analyzer. (branch `feat/claude-segmentation`)
 5. DB: in-memory repos → Prisma adapters. ← or take this (chain adapters still need Foundry contracts + RPC).
 
 ✅ **Funding gap closed** — `activateEscrow` marks every milestone `pending → funded` from the
@@ -73,7 +78,7 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 
 ## Still stubbed → real adapters pending
 - AI: ✅ `ClaudeContractAnalyzer` (real Claude, `@anthropic-ai/sdk`, structured outputs / `output_config.format`, model `claude-sonnet-4-6`) replaces `StubContractAnalyzer` behind the port; client injected so it's unit-testable offline (stub kept for deterministic tests).
-- Document parsing: ✅ `ExtractingDocumentParser` (real) = injected `TextExtractor` (`LibraryTextExtractor`: unpdf for PDF, mammoth for DOCX) + pure shared `segmentClauses`. Replaces `StubDocumentParser` behind the `DocumentParser` port; stub kept (now also uses `segmentClauses`) for deterministic text fixtures. Extraction verified on real PDF+DOCX; segmentation is still a naive blank-line heuristic.
+- Document parsing: ✅ `ExtractingDocumentParser` (real) = injected `TextExtractor` (`LibraryTextExtractor`: unpdf for PDF, mammoth for DOCX) + injected `ClauseSegmenter`. Replaces `StubDocumentParser` behind the `DocumentParser` port; stub kept (uses `segmentClauses`) for deterministic text fixtures. Extraction verified on real PDF+DOCX. ✅ segmentation: `ClaudeClauseSegmenter` (real Claude, structured outputs) behind the new `ClauseSegmenter` port; `HeuristicClauseSegmenter` (pure `segmentClauses`) kept for deterministic tests. Segmenter unit-tested with a fake client; live-API verify still outstanding.
 - Hash: ✅ DONE both sides. Report `ReportHasher` → REAL `Keccak256ReportHasher` (viem keccak256, EVM-native, matches the on-chain verifier); contract `contentHash` → REAL `Sha256DocumentHasher` (Web Crypto). `InsecureStubHasher`/`InsecureStubDocumentHasher` kept for deterministic tests only; the stub keccak now shares the real canonical pre-image (`chain/report-canonical.ts`).
 - Storage: `InMemoryDocumentStore` → Vercel Blob / S3 adapter (same `DocumentStore` port).
 - Chain: ✅ Solidity contracts now exist — `contracts/src/Escrow.sol` (ERC-20 milestone escrow: fund + strict in-order release + auto-complete; releaser = platform/deployer; dispute/refund are TODO) and `contracts/src/ReportAnchor.sol` (once-only keccak256 hash registry), both with passing forge tests. ⬜ The stub anchor/verifier/deployer/release services still need REAL viem adapters that bind to these contracts (deploy/fund/anchor/release + EIP-712 verify) — needs a Base Sepolia RPC + funded key. `StubEscrowDeployer`/`StubMilestoneReleaseService` fake payouts with no real transfer — must never back a real escrow.
