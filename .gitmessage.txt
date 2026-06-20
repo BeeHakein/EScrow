@@ -1,0 +1,8 @@
+# <type>(<scope>): <subject>   — imperative, <=72 chars, no period
+#
+# Why is this change needed? (the body explains why, not what)
+#
+#
+# Footer: BREAKING CHANGE: ... | Refs: #123 | Co-Authored-By: ...
+#
+# Types: feat fix refactor test docs chore perf build ci

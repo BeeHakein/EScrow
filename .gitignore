@@ -1,0 +1,24 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# prisma
+prisma/*.db
+
+# claude code — personal/machine-local overrides (shared config IS committed)
+.claude/settings.local.json
+
+.DS_Store
+*.log
