@@ -20,8 +20,11 @@ Suggested order:
 1. ✅ `git init` done — slices commit on `feat/*` branches behind the test gate (`main` is protected).
 2. ✅ Hash done — report `ReportHasher` now has a REAL `Keccak256ReportHasher` (viem, EVM-native) and
    contract `contentHash` a REAL `Sha256DocumentHasher` (Web Crypto). Stubs kept for deterministic tests.
-3. Chain adapters (anchor/verifier/deployer/release) against deployed `Escrow.sol` / `ReportAnchor.sol` (Foundry). ← NEXT
-4. AI: `StubContractAnalyzer` → real Claude analyzer; `StubDocumentParser` → real PDF/DOCX parsing (consult `claude-api` skill, model `claude-sonnet-4-6`).
+3. Chain adapters (anchor/verifier/deployer/release) against deployed `Escrow.sol` / `ReportAnchor.sol` (Foundry).
+4. AI: ✅ analyzer done — `ClaudeContractAnalyzer` (real Claude, structured outputs, model `claude-sonnet-4-6`)
+   replaces `StubContractAnalyzer` behind the port. ⬜ STILL TODO: `StubDocumentParser` → real PDF/DOCX parsing
+   (library-heavy; likely Claude-assisted segmentation). ⚠️ analyzer is unit-tested with a FAKE client only —
+   not yet run against the live API (`/verify` + API key needed; anti-pattern #7). ← parser is a good NEXT slice.
 5. DB: in-memory repos → Prisma adapters.
 
 ✅ **Funding gap closed** — `activateEscrow` marks every milestone `pending → funded` from the
@@ -34,7 +37,7 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 - Boundary parsers / value objects (`src/boundary/`) — only place brands are minted.
 - Escrow state machine: pure transitions in `domain/escrow-transitions.ts`.
 - Milestone status machine: pure transitions in `domain/milestone-transitions.ts` (`fund`/`submit`/`approve`/`release`).
-- Verify gate: `npm run typecheck` + `npm test` → currently 49 tests green.
+- Verify gate: `npm run typecheck` + `npm test` → currently 54 tests green.
 - Real adapters landed: `Sha256DocumentHasher` (Web Crypto) behind `DocumentHasher`; `Keccak256ReportHasher` (viem) behind `ReportHasher`. Shared canonical pre-image in `chain/report-canonical.ts`.
 - End-to-end acceptance test: `tests/application/full-flow.e2e.test.ts` drives ONE escrow through all 6 use-cases over shared in-memory repos (upload→…→completed), threading the real keccak report hash through anchor + signatures. This is the regression gate every real-adapter swap must keep green.
 
@@ -45,7 +48,7 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 - There is no "test at the end" phase — testing is the gate, not a stage.
 
 ## Still stubbed → real adapters pending
-- AI: `StubContractAnalyzer` → real Claude analyzer; `StubDocumentParser` (regex/keyword split) → real PDF/DOCX parsing (consult `claude-api` skill, model `claude-sonnet-4-6`).
+- AI: ✅ `ClaudeContractAnalyzer` (real Claude, `@anthropic-ai/sdk`, structured outputs / `output_config.format`, model `claude-sonnet-4-6`) replaces `StubContractAnalyzer` behind the port; client injected so it's unit-testable offline (stub kept for deterministic tests). ⬜ `StubDocumentParser` (regex/keyword split) → real PDF/DOCX parsing still pending.
 - Hash: ✅ DONE both sides. Report `ReportHasher` → REAL `Keccak256ReportHasher` (viem keccak256, EVM-native, matches the on-chain verifier); contract `contentHash` → REAL `Sha256DocumentHasher` (Web Crypto). `InsecureStubHasher`/`InsecureStubDocumentHasher` kept for deterministic tests only; the stub keccak now shares the real canonical pre-image (`chain/report-canonical.ts`).
 - Storage: `InMemoryDocumentStore` → Vercel Blob / S3 adapter (same `DocumentStore` port).
 - Chain: stub anchor/verifier/deployer/release → viem + deployed `Escrow.sol` / `ReportAnchor.sol` (Foundry). `StubEscrowDeployer` fakes deploy+fund and `StubMilestoneReleaseService` fakes payout with no real transfer — must never back a real escrow.
