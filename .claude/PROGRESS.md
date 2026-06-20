@@ -12,22 +12,33 @@ On resume after `/clear`: read this file + skim `src/application/` to confirm, t
 6. Milestone-by-milestone release — ✅ `application/release-milestone.ts` (+ `MilestoneReleaseService` port, stub, pure `domain/milestone-transitions.ts`)
 
 ## Next
-### ▶ DECIDED NEXT SLICE (start here next session): DB / Prisma layer
-Swap the in-memory repositories for **Prisma adapters behind the existing repository ports**
-(`src/domain/repositories/*` — contract/risk-report/escrow/party/signature/milestone). Callers
-(the use-cases) MUST NOT change — same port-swap pattern proven for the hashers/analyzer/parser.
-Plan when you pick it up:
-- `prisma/schema.prisma` modelling the 6 aggregates; map domain value objects (branded ids, Hash32,
-  Wei as a serialized integer/string, Timestamp ISO, escrow/milestone status unions) to columns.
-  Parse DB rows back to domain types at a boundary (don't leak Prisma types into domain/application).
-- Prisma-backed repo classes in `src/infrastructure/db/prisma/` implementing the same interfaces as
-  the `in-memory/` ones (keep in-memory for fast deterministic tests).
-- Test against **SQLite** (provider in a test schema) so the gate stays offline/deterministic;
-  Postgres stays the prod target (`DATABASE_URL` in `.env.example`). `prisma migrate dev` for migrations.
-- Prereq: `npm i -D prisma && npm i @prisma/client`, then `npx prisma generate` (downloads engines once).
-- Gate stays BOTH halves: `npm run typecheck` + `npm test` (62 now) AND `forge test` (13).
-Context: branch `feat/real-adapters` is PUSHED and open as **PR #1** (BeeHakein/EScrow). Start the DB
-slice on a FRESH branch off `main` after the PR merges, or stack on `feat/real-adapters` if it hasn't.
+### ✅ DONE: DB / Prisma layer (this slice — branch `feat/prisma-adapters`, stacked on feat/real-adapters)
+All 6 repository ports now have **Prisma adapters** in `src/infrastructure/db/prisma/`
+(`Prisma{Contract,RiskReport,Escrow,Party,Signature,Milestone}Repository`). Callers (the
+use-cases) did NOT change — same port-swap pattern. In-memory repos kept for the application
+unit tests. Key decisions (see lessons-learned):
+- `prisma/schema.prisma` is **sqlite** (committed) so the gate stays offline/deterministic; models
+  are PROVIDER-PORTABLE (no Json columns — sqlite can't; Wei → base-10 TEXT string, Timestamp → ISO
+  TEXT, the EscrowState/MilestoneStatus discriminated unions → canonical JSON in a TEXT column).
+  Prod swap = flip datasource `provider` to "postgresql" + re-migrate; models unchanged (`.env.example`).
+- Flat one-to-many lists are NORMALIZED relations (Contract→Clause, RiskReport→ClauseRisk, replaced
+  wholesale on save); the heterogeneous unions are serialized. `src/boundary/db-row.ts` re-parses every
+  row back into domain types (DB is OUTSIDE the trust boundary) — throws on corruption, never leaks Prisma types.
+- PrismaClient injected via constructor (inject-the-dependency, like the Claude/extractor adapters);
+  `prisma/client.ts` is the app singleton, tests inject a temp-sqlite client.
+- Tests: each test file gets a throwaway temp sqlite DB with the COMMITTED migration applied via
+  `prisma migrate deploy` (`tests/infrastructure/prisma/test-db.ts`). Fully offline. 37 new tests.
+
+### ▶ DECIDED NEXT SLICE: pick one (DB no longer blocks anything)
+- **Claude-assisted clause segmentation** (UNBLOCKED, no creds): replace the naive blank-line
+  `segmentClauses` heuristic with an LLM-assisted segmenter behind the existing `DocumentParser`/
+  `TextExtractor` seam. Same inject-a-fake-client offline test pattern as `ClaudeContractAnalyzer`.
+- **Chain viem adapters** (credential-gated): bind anchor/verifier/deployer/release to the Foundry
+  `Escrow.sol`/`ReportAnchor.sol` — needs a Base Sepolia RPC URL + funded test key (`.env.example`).
+- **Storage adapter** (credential-gated): `InMemoryDocumentStore` → Vercel Blob / S3.
+Gate stays BOTH halves: `npm run typecheck` + `npm test` (99 now) AND `forge test` (13).
+Context: branch `feat/real-adapters` is open as **PR #1** (BeeHakein/EScrow); this DB slice is on
+`feat/prisma-adapters` stacked on it. Push + open a follow-up PR (or rebase onto main once #1 merges).
 
 ---
 **All 6 flow steps have application use-cases; real adapters landed for hashing + AI + document
@@ -49,7 +60,8 @@ Adapter-swap history / remaining (callers never change):
    unpdf/mammoth) replaces `StubDocumentParser`. Extraction VERIFIED end-to-end on real PDF+DOCX bytes.
    ⚠️ segmentation is still the naive blank-line heuristic (`segmentClauses`) — real docs need better
    (Claude-assisted) segmentation; swappable behind the port. ← improving segmentation is a good NEXT slice.
-5. DB: in-memory repos → Prisma adapters. ← or take this (chain adapters still need Foundry contracts + RPC).
+5. ✅ DB done — in-memory repos → Prisma adapters (sqlite, provider-portable; `src/infrastructure/db/prisma/`).
+   In-memory repos kept for application unit tests. See the DONE block under "## Next".
 
 ✅ **Funding gap closed** — `activateEscrow` marks every milestone `pending → funded` from the
 `FundingPlan` via the pure `fund` transition (pre-computed before the irreversible deploy).
@@ -61,7 +73,7 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 - Boundary parsers / value objects (`src/boundary/`) — only place brands are minted.
 - Escrow state machine: pure transitions in `domain/escrow-transitions.ts`.
 - Milestone status machine: pure transitions in `domain/milestone-transitions.ts` (`fund`/`submit`/`approve`/`release`).
-- Verify gate: `npm run typecheck` + `npm test` (62 green) AND `forge test` in `contracts/` (13 green). Run forge via `export PATH="$HOME/.foundry/bin:$PATH"`.
+- Verify gate: `npm run typecheck` + `npm test` (99 green) AND `forge test` in `contracts/` (13 green). Run forge via `export PATH="$HOME/.foundry/bin:$PATH"`.
 - Real adapters landed: `Sha256DocumentHasher` (Web Crypto) behind `DocumentHasher`; `Keccak256ReportHasher` (viem) behind `ReportHasher`. Shared canonical pre-image in `chain/report-canonical.ts`.
 - End-to-end acceptance test: `tests/application/full-flow.e2e.test.ts` drives ONE escrow through all 6 use-cases over shared in-memory repos (upload→…→completed), threading the real keccak report hash through anchor + signatures. This is the regression gate every real-adapter swap must keep green.
 
@@ -77,8 +89,12 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 - Hash: ✅ DONE both sides. Report `ReportHasher` → REAL `Keccak256ReportHasher` (viem keccak256, EVM-native, matches the on-chain verifier); contract `contentHash` → REAL `Sha256DocumentHasher` (Web Crypto). `InsecureStubHasher`/`InsecureStubDocumentHasher` kept for deterministic tests only; the stub keccak now shares the real canonical pre-image (`chain/report-canonical.ts`).
 - Storage: `InMemoryDocumentStore` → Vercel Blob / S3 adapter (same `DocumentStore` port).
 - Chain: ✅ Solidity contracts now exist — `contracts/src/Escrow.sol` (ERC-20 milestone escrow: fund + strict in-order release + auto-complete; releaser = platform/deployer; dispute/refund are TODO) and `contracts/src/ReportAnchor.sol` (once-only keccak256 hash registry), both with passing forge tests. ⬜ The stub anchor/verifier/deployer/release services still need REAL viem adapters that bind to these contracts (deploy/fund/anchor/release + EIP-712 verify) — needs a Base Sepolia RPC + funded key. `StubEscrowDeployer`/`StubMilestoneReleaseService` fake payouts with no real transfer — must never back a real escrow.
-- DB: in-memory repos → Prisma adapters.
+- DB: ✅ DONE — Prisma adapters behind all 6 ports (sqlite/provider-portable). In-memory repos kept
+  for fast application unit tests; the Prisma adapters have their own round-trip tests against temp sqlite.
 
 ## Standing setup TODO
 - Node 26 / npm 11 installed; after `npm install` run `npm rebuild esbuild` once (vitest needs it).
 - `viem` is now a runtime dependency (keccak256 today; chain client for the adapters next).
+- Prisma: after `npm install`, run `npx prisma generate` once (generates the client; downloads the
+  engine — needs network once). Runtime deps now: viem, @anthropic-ai/sdk, mammoth, unpdf, @prisma/client.
+- DB env: `DATABASE_URL` defaults to `file:./dev.db` (sqlite). `prisma migrate dev` to evolve the schema.

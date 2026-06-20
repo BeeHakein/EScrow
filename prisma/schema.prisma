@@ -1,0 +1,135 @@
+// Persistence schema. Models map the 6 domain aggregates 1:1; the Prisma adapters in
+// src/infrastructure/db/prisma/ implement the existing repository ports and re-parse every
+// row back into domain types at a boundary (src/boundary/db-row.ts) — Prisma types never
+// leak into domain/application.
+//
+// PROVIDER: sqlite here so the test gate stays offline and deterministic. Models are written
+// PROVIDER-PORTABLE on purpose (no Json columns — unsupported on sqlite; bigint Wei and the
+// status/state discriminated unions are stored as canonical JSON in TEXT columns). Production
+// target is Postgres: flip `provider` to "postgresql" and point DATABASE_URL at Postgres — the
+// models are unchanged. See .env.example / PROGRESS.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Party ───────────────────────────────────────────────────────────────────────
+model Party {
+  id            String @id
+  userId        String
+  role          String // PartyRole: 'client' | 'freelancer'
+  displayName   String
+  walletAddress String
+
+  @@index([userId])
+  @@index([walletAddress])
+}
+
+// ── Contract (+ Clause) ───────────────────────────────────────────────────────────
+model Contract {
+  id          String   @id
+  title       String
+  format      String // DocumentFormat: 'pdf' | 'docx'
+  contentHash String
+  storageKey  String
+  uploadedBy  String
+  uploadedAt  String // ISO-8601 Timestamp
+  clauses     Clause[]
+
+  @@index([uploadedBy])
+}
+
+model Clause {
+  id         String   @id
+  contractId String
+  index      Int
+  heading    String? // null when the parser found no heading
+  text       String
+  category   String // ClauseCategory closed set
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, index])
+  @@index([contractId])
+}
+
+// ── RiskReport (+ ClauseRisk) ─────────────────────────────────────────────────────
+model RiskReport {
+  id           String       @id
+  contractId   String
+  model        String // pinned AiModelId
+  overallLevel String // RiskLevel
+  overallScore Int
+  summary      String
+  generatedAt  String // ISO-8601 Timestamp
+  reportHash   String
+  assessments  ClauseRisk[]
+
+  @@index([contractId])
+}
+
+model ClauseRisk {
+  id             String     @id @default(cuid()) // synthetic row id; domain ClauseRisk has no own id
+  reportId       String
+  clauseId       String
+  level          String // RiskLevel
+  score          Int
+  rationale      String
+  recommendation String? // null when the AI gave none
+  report         RiskReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, clauseId])
+  @@index([reportId])
+}
+
+// ── Escrow ────────────────────────────────────────────────────────────────────────
+// The EscrowState discriminated union (7 variants, each with variant-specific evidence) is
+// serialized as canonical JSON in `state`. Storing flat nullable columns would reintroduce the
+// exact nullable-soup the domain union is designed to forbid; the boundary re-parser rebuilds
+// the typed union on read. contractId/client/freelancer stay real columns for the port queries.
+model Escrow {
+  id         String @id
+  contractId String @unique // one escrow per contract (findByContract)
+  client     String
+  freelancer String
+  state      String // JSON-serialized EscrowState
+  createdAt  String // ISO-8601 Timestamp
+  updatedAt  String // ISO-8601 Timestamp
+
+  @@index([client])
+  @@index([freelancer])
+}
+
+// ── Milestone ───────────────────────────────────────────────────────────────────────
+model Milestone {
+  id          String @id
+  escrowId    String
+  index       Int
+  title       String
+  description String
+  amountWei   String // Wei as a base-10 integer string (no floats, no bigint-on-sqlite surprises)
+  amountToken String // EthereumAddress or the literal 'native'
+  status      String // JSON-serialized MilestoneStatus union
+
+  @@unique([escrowId, index])
+  @@index([escrowId])
+}
+
+// ── PartySignature ──────────────────────────────────────────────────────────────────
+// One row per (escrow, party); a party re-signing replaces its earlier signature (the unique
+// key drives the upsert in the repo).
+model PartySignature {
+  escrowId  String
+  party     String
+  signer    String
+  signature String
+  signedHash String
+  signedAt  String // ISO-8601 Timestamp
+
+  @@id([escrowId, party])
+  @@index([escrowId])
+}
