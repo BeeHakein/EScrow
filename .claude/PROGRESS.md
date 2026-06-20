@@ -20,7 +20,10 @@ Suggested order:
 1. ✅ `git init` done — slices commit on `feat/*` branches behind the test gate (`main` is protected).
 2. ✅ Hash done — report `ReportHasher` now has a REAL `Keccak256ReportHasher` (viem, EVM-native) and
    contract `contentHash` a REAL `Sha256DocumentHasher` (Web Crypto). Stubs kept for deterministic tests.
-3. Chain adapters (anchor/verifier/deployer/release) against deployed `Escrow.sol` / `ReportAnchor.sol` (Foundry).
+3. ✅ Foundry contracts scaffolded — `contracts/src/{Escrow,ReportAnchor}.sol` + forge tests (13 passing,
+   `forge test`). Compile clean on solc 0.8.24. ⬜ STILL TODO: the viem CHAIN ADAPTERS (anchor/verifier/
+   deployer/release) that bind to these — needs a Base Sepolia RPC URL + a funded test key. ← NEXT once a
+   testnet account is available; the contracts they target now exist.
 4. AI: ✅ analyzer done — `ClaudeContractAnalyzer` (real Claude, structured outputs, model `claude-sonnet-4-6`)
    replaces `StubContractAnalyzer` behind the port. ⚠️ analyzer unit-tested with a FAKE client only —
    not yet run against the live API (`/verify` + API key needed; anti-pattern #7).
@@ -40,7 +43,7 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 - Boundary parsers / value objects (`src/boundary/`) — only place brands are minted.
 - Escrow state machine: pure transitions in `domain/escrow-transitions.ts`.
 - Milestone status machine: pure transitions in `domain/milestone-transitions.ts` (`fund`/`submit`/`approve`/`release`).
-- Verify gate: `npm run typecheck` + `npm test` → currently 62 tests green.
+- Verify gate: `npm run typecheck` + `npm test` (62 green) AND `forge test` in `contracts/` (13 green). Run forge via `export PATH="$HOME/.foundry/bin:$PATH"`.
 - Real adapters landed: `Sha256DocumentHasher` (Web Crypto) behind `DocumentHasher`; `Keccak256ReportHasher` (viem) behind `ReportHasher`. Shared canonical pre-image in `chain/report-canonical.ts`.
 - End-to-end acceptance test: `tests/application/full-flow.e2e.test.ts` drives ONE escrow through all 6 use-cases over shared in-memory repos (upload→…→completed), threading the real keccak report hash through anchor + signatures. This is the regression gate every real-adapter swap must keep green.
 
@@ -55,7 +58,7 @@ clauses via `DocumentParser`, parses each at `boundary/contract.ts`, and persist
 - Document parsing: ✅ `ExtractingDocumentParser` (real) = injected `TextExtractor` (`LibraryTextExtractor`: unpdf for PDF, mammoth for DOCX) + pure shared `segmentClauses`. Replaces `StubDocumentParser` behind the `DocumentParser` port; stub kept (now also uses `segmentClauses`) for deterministic text fixtures. Extraction verified on real PDF+DOCX; segmentation is still a naive blank-line heuristic.
 - Hash: ✅ DONE both sides. Report `ReportHasher` → REAL `Keccak256ReportHasher` (viem keccak256, EVM-native, matches the on-chain verifier); contract `contentHash` → REAL `Sha256DocumentHasher` (Web Crypto). `InsecureStubHasher`/`InsecureStubDocumentHasher` kept for deterministic tests only; the stub keccak now shares the real canonical pre-image (`chain/report-canonical.ts`).
 - Storage: `InMemoryDocumentStore` → Vercel Blob / S3 adapter (same `DocumentStore` port).
-- Chain: stub anchor/verifier/deployer/release → viem + deployed `Escrow.sol` / `ReportAnchor.sol` (Foundry). `StubEscrowDeployer` fakes deploy+fund and `StubMilestoneReleaseService` fakes payout with no real transfer — must never back a real escrow.
+- Chain: ✅ Solidity contracts now exist — `contracts/src/Escrow.sol` (ERC-20 milestone escrow: fund + strict in-order release + auto-complete; releaser = platform/deployer; dispute/refund are TODO) and `contracts/src/ReportAnchor.sol` (once-only keccak256 hash registry), both with passing forge tests. ⬜ The stub anchor/verifier/deployer/release services still need REAL viem adapters that bind to these contracts (deploy/fund/anchor/release + EIP-712 verify) — needs a Base Sepolia RPC + funded key. `StubEscrowDeployer`/`StubMilestoneReleaseService` fake payouts with no real transfer — must never back a real escrow.
 - DB: in-memory repos → Prisma adapters.
 
 ## Standing setup TODO
