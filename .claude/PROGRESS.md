@@ -12,11 +12,29 @@ On resume after `/clear`: read this file + skim `src/application/` to confirm, t
 6. Milestone-by-milestone release — ✅ `application/release-milestone.ts` (+ `MilestoneReleaseService` port, stub, pure `domain/milestone-transitions.ts`)
 
 ## Next
-**All 6 flow steps now have application use-cases (stub-backed). The platform skeleton is complete
-end-to-end: upload → analyze → anchor → sign → activate(+fund milestones) → release → complete.**
+### ▶ DECIDED NEXT SLICE (start here next session): DB / Prisma layer
+Swap the in-memory repositories for **Prisma adapters behind the existing repository ports**
+(`src/domain/repositories/*` — contract/risk-report/escrow/party/signature/milestone). Callers
+(the use-cases) MUST NOT change — same port-swap pattern proven for the hashers/analyzer/parser.
+Plan when you pick it up:
+- `prisma/schema.prisma` modelling the 6 aggregates; map domain value objects (branded ids, Hash32,
+  Wei as a serialized integer/string, Timestamp ISO, escrow/milestone status unions) to columns.
+  Parse DB rows back to domain types at a boundary (don't leak Prisma types into domain/application).
+- Prisma-backed repo classes in `src/infrastructure/db/prisma/` implementing the same interfaces as
+  the `in-memory/` ones (keep in-memory for fast deterministic tests).
+- Test against **SQLite** (provider in a test schema) so the gate stays offline/deterministic;
+  Postgres stays the prod target (`DATABASE_URL` in `.env.example`). `prisma migrate dev` for migrations.
+- Prereq: `npm i -D prisma && npm i @prisma/client`, then `npx prisma generate` (downloads engines once).
+- Gate stays BOTH halves: `npm run typecheck` + `npm test` (62 now) AND `forge test` (13).
+Context: branch `feat/real-adapters` is PUSHED and open as **PR #1** (BeeHakein/EScrow). Start the DB
+slice on a FRESH branch off `main` after the PR merges, or stack on `feat/real-adapters` if it hasn't.
 
-Remaining work is swapping stubs for real adapters behind existing ports (callers don't change).
-Suggested order:
+---
+**All 6 flow steps have application use-cases; real adapters landed for hashing + AI + document
+parsing + Foundry contracts (see below). The two credential-gated slices (chain adapters, analyzer
+live-API verify) wait on a `.env` — see `.env.example`.**
+
+Adapter-swap history / remaining (callers never change):
 1. ✅ `git init` done — slices commit on `feat/*` branches behind the test gate (`main` is protected).
 2. ✅ Hash done — report `ReportHasher` now has a REAL `Keccak256ReportHasher` (viem, EVM-native) and
    contract `contentHash` a REAL `Sha256DocumentHasher` (Web Crypto). Stubs kept for deterministic tests.
